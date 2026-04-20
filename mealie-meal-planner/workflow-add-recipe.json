@@ -1,0 +1,218 @@
+{
+  "name": "Mealie - Add Recipe",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "add-recipe",
+        "options": {}
+      },
+      "id": "webhook-add-recipe",
+      "name": "Webhook: Add Recipe",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "mealie-add-recipe"
+    },
+    {
+      "parameters": {
+        "functionCode": "const data = $json;\n\n// Simple ID generator for instructions\nfunction generateId() {\n    return 'cda6187d' + Math.random().toString(36).substring(2, 11).padEnd(8, '0');\n}\n\n// Transform ingredients if present\nif (data.type === 'manual' && data.recipe && data.recipe.ingredients) {\n    const ingredients = data.recipe.ingredients.map(ing => {\n        const amount = ing.amount || '';\n        const unit = ing.unit || '';\n        const name = ing.name || '';\n        const originalText = [amount, unit, name].filter(Boolean).join(' ');\n        \n        return {\n            quantity: parseFloat(amount) || 0,\n            unit: unit ? { name: unit } : null,\n            note: originalText,\n            originalText: originalText,\n            display: originalText\n        };\n    });\n    \n    data.recipe.recipeIngredient = ingredients;\n}\n\n// Tags as array\nif (data.recipe && data.recipe.tags) {\n    const tags = data.recipe.tags;\n    data.recipe.tags = tags.map(t => typeof t === 'string' ? {name: t} : t);\n}\n\n// Process instructions - ensure explicit IDs for each step\nif (data.recipe && data.recipe.instructions) {\n    if (typeof data.recipe.instructions === 'string') {\n        // Wrap string as array with IDs\n        const steps = data.recipe.instructions.split('\\n').filter(s => s.trim());\n        data.recipe.recipeInstructions = steps.map((text, i) => ({\n            title: null,\n            text: text.trim(),\n            order: i + 1,\n            id: generateId()\n        }));\n    } else {\n        // Pass array through but ensure all have IDs\n        data.recipe.recipeInstructions = data.recipe.instructions.map((inst, i) => ({\n            ...inst,\n            id: inst.id || generateId()\n        }));\n    }\n}\n\nreturn [{ json: data }];"
+      },
+      "id": "parse-input",
+      "name": "Parse Input",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.body.type }}",
+              "value2": "url"
+            }
+          ]
+        }
+      },
+      "id": "if-url-type",
+      "name": "If: URL Import",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [750, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $env.MEALIE_URL }}/api/recipes/from-url",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "url",
+              "value": "={{ $json.body.url }}"
+            }
+          ]
+        },
+        "options": {
+          "raw": true
+        }
+      },
+      "id": "import-from-url",
+      "name": "Import from URL",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1000, 200],
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "YOUR_MEALIE_AUTH_ID",
+          "name": "YOUR_MEALIE_AUTH_NAME"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $env.MEALIE_URL }}/api/recipes",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendBody": true,
+        "options": {
+          "raw": true
+        },
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "name",
+              "value": "{{ $json.recipe.name }}"
+            }
+          ]
+        }
+      },
+      "id": "create-recipe",
+      "name": "Create Recipe (POST)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1000, 400],
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "YOUR_MEALIE_AUTH_ID",
+          "name": "YOUR_MEALIE_AUTH_NAME"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "{{ $env.MEALIE_URL }}/api/recipes/{{ $json.slug }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendBody": true,
+        "options": {
+          "raw": true
+        },
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "description",
+              "value": "{{ $json.recipe.description }}"
+            },
+            {
+              "name": "recipeIngredient",
+              "value": "{{ $json.recipe.recipeIngredient }}"
+            },
+            {
+              "name": "recipeInstructions",
+              "value": "{{ $json.recipe.recipeInstructions }}"
+            },
+            {
+              "name": "tags",
+              "value": "{{ $json.recipe.tags }}"
+            }
+          ]
+        }
+      },
+      "id": "update-recipe",
+      "name": "Update Recipe (PATCH)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1250, 400],
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "YOUR_MEALIE_AUTH_ID",
+          "name": "YOUR_MEALIE_AUTH_NAME"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Debug: show what we're about to send\nconst recipe = $json.recipe || $json;\nreturn [{\n    json: {\n        debug: true,\n        recipe: JSON.stringify(recipe, null, 2),\n        hasIngredients: !!recipe.recipeIngredient,\n        hasInstructions: !!recipe.recipeInstructions,\n        hasInstructionIds: recipe.recipeInstructions?.every(i => i.id) || false,\n        hasTags: !!recipe.tags\n    }\n}];"
+      },
+      "id": "format-response",
+      "name": "Format Response",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1500, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}"
+      },
+      "id": "respond-webhook",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1750, 300]
+    }
+  ],
+  "connections": {
+    "Webhook: Add Recipe": {
+      "main": [[{"node": "Parse Input", "type": "main", "index": 0}]]
+    },
+    "Parse Input": {
+      "main": [[{"node": "If: URL Import", "type": "main", "index": 0}]]
+    },
+    "If: URL Import": {
+      "main": [
+        [{"node": "Import from URL", "type": "main", "index": 0}],
+        [{"node": "Create Recipe (POST)", "type": "main", "index": 0}]
+      ]
+    },
+    "Import from URL": {
+      "main": [[{"node": "Format Response", "type": "main", "index": 0}]]
+    },
+    "Create Recipe (POST)": {
+      "main": [[{"node": "Update Recipe (PATCH)", "type": "main", "index": 0}]]
+    },
+    "Update Recipe (PATCH)": {
+      "main": [[{"node": "Format Response", "type": "main", "index": 0}]]
+    },
+    "Format Response": {
+      "main": [[{"node": "Respond", "type": "main", "index": 0}]]
+    }
+  },
+  "active": false,
+  "settings": {"executionOrder": "v1"},
+  "versionId": "1",
+  "id": "mealie-add-recipe",
+  "tags": ["mealie", "recipe"]
+}
